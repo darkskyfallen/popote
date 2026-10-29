@@ -82,7 +82,30 @@ Recettes, planning, liste de courses et cases cochées sont partagés en temps r
 
 ---
 
-## 5. Plus tard : la version APK
+## 5. Importer des recettes depuis un site (10 minutes)
+
+Popote lit la fiche structurée (schema.org/Recipe) que la plupart des sites de cuisine placent dans leurs pages : Marmiton, 750g, Cuisine AZ, Journal des Femmes, blogs WordPress… Comme un navigateur n'a pas le droit de lire les pages d'un autre site, c'est une petite fonction Supabase qui va chercher la page.
+
+**Créer la fonction**
+1. Dans Supabase, barre de gauche : **Edge Functions** → **Deploy a new function** → **Via Editor**.
+2. Nom de la fonction : `import-recipe` (exactement).
+3. Efface le code d'exemple et colle tout le contenu de `supabase/functions/import-recipe/index.ts`.
+4. Clique **Deploy function** et attends la fin du déploiement.
+5. Ouvre l'onglet **Details** (ou **Settings**) de la fonction, désactive **Verify JWT** (parfois nommé « Enforce JWT verification » ou « Verify JWT with legacy secret »), puis **Save**. La fonction vérifie elle-même que la personne est connectée à Popote.
+
+**Ajouter le lien d'origine aux recettes** (seulement si ta base a été créée avant cette mise à jour)
+Dans **SQL Editor**, lance le contenu de `supabase/ajout-import.sql` (une seule ligne).
+
+**Utiliser l'import**
+- Onglet Recettes → bouton **Importer** (icône de lien) → colle l'adresse de la recette → **Importer**. Le formulaire s'ouvre pré-rempli : vérifie, corrige si besoin, puis **Enregistrer**.
+- **Sur Android** : depuis une recette dans Chrome, **Partager** → **Popote**. Popote doit être installée ; si elle n'apparaît pas dans le menu, désinstalle-la puis réinstalle-la depuis Chrome pour qu'Android prenne en compte la nouveauté.
+- **Coller le texte** : pour un site sans fiche structurée, ou une recette reçue par message, copie le texte et colle-le dans l'onglet « Coller le texte ». Les rubriques « Ingrédients » et « Préparation » aident au découpage. Cette option marche aussi sans Supabase.
+
+Les recettes importées sont pour ton usage personnel : garde-les dans ton carnet, sans les republier.
+
+---
+
+## 6. Plus tard : la version APK
 
 La PWA est prête à être emballée en APK Android avec [PWABuilder](https://www.pwabuilder.com) (gratuit) : tu colles l'adresse du site, tu choisis **Android**, et tu récupères un APK à installer directement (ou un fichier pour le Play Store, 25 $ une seule fois).
 
@@ -102,11 +125,14 @@ index.html              page d'accueil de l'appli
 vite.config.js          configuration du build et de la PWA (manifest, cache hors-ligne)
 public/                 icônes
 src/main.js             interface (écrans, feuilles, événements)
+src/importer.js         import : découpage des ingrédients et du texte collé
 src/store.js            données : mode local, Supabase, file d'attente hors-ligne, temps réel
 src/logic.js            calculs : quantités, liste de courses, nutrition, dates
 src/data.js             rayons, unités, profils d'équilibre, recettes d'exemple
 src/style.css           styles (thème clair et sombre)
 supabase/schema.sql     tables, sécurité et temps réel à créer dans Supabase
+supabase/ajout-import.sql   mise à jour pour les bases créées avant l'import
+supabase/functions/      fonction « import-recipe » à déployer dans Supabase
 .github/workflows/      déploiement automatique sur GitHub Pages
 ```
 
@@ -117,3 +143,6 @@ supabase/schema.sql     tables, sécurité et temps réel à créer dans Supabas
 - **Page blanche sur GitHub Pages** : vérifie que **Settings → Pages → Source** est bien sur **GitHub Actions**.
 - **Mot de passe oublié** : sur l'écran de connexion, saisis ton email puis touche « Mot de passe oublié ? ». Le lien reçu ouvre Popote pour choisir un nouveau mot de passe (l'étape « Site URL » de la section 3 doit être faite).
 - **Les changements de l'autre n'apparaissent pas** : vérifie que le script SQL est passé en entier (dernier bloc « Temps réel »). L'appli se resynchronise aussi à chaque retour au premier plan.
+- **« La fonction d'import n'est pas encore installée »** : la fonction n'existe pas ou n'a pas exactement le nom `import-recipe` (section 5).
+- **« Supabase a refusé l'accès à la fonction d'import »** : désactive **Verify JWT** dans les réglages de la fonction (section 5, point 5).
+- **« Ce site refuse les lectures automatiques »** ou **« Aucune fiche de recette trouvée »** : certains sites bloquent les lectures ou n'ont pas de fiche structurée. Utilise « Coller le texte ».

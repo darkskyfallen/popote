@@ -66,6 +66,10 @@ export async function flush() {
       try { res = await exec(queue[0]) } catch (e) { res = { error: e } }
       if (res.error) {
         if (isNetwork(res.error)) break
+        // Colonne « source » pas encore ajoutée dans Supabase : on enregistre la recette sans le lien d'origine
+        if (queue[0].table === 'recipes' && queue[0].row && 'source' in queue[0].row && /source/i.test(res.error.message || '')) {
+          delete queue[0].row.source; LS.set(QKEY, queue); continue
+        }
         console.warn('Popote : modification refusée par le serveur', queue[0], res.error)
         state.error = res.error.message
       }
@@ -75,8 +79,8 @@ export async function flush() {
 }
 
 /* ---------- Lecture depuis Supabase ---------- */
-const fromRecipe = r => ({ id: r.id, name: r.name, servings: r.servings, time: r.time, hue: r.hue, ingredients: r.ingredients || [], steps: r.steps || [], nutri: r.nutri, tip: r.tip || '' })
-const toRecipe = r => ({ id: r.id, household_id: state.household?.id, name: r.name, servings: r.servings, time: r.time, hue: r.hue, ingredients: r.ingredients, steps: r.steps, nutri: r.nutri || null, tip: r.tip || null, updated_at: new Date().toISOString() })
+const fromRecipe = r => ({ id: r.id, name: r.name, servings: r.servings, time: r.time, hue: r.hue, ingredients: r.ingredients || [], steps: r.steps || [], nutri: r.nutri, tip: r.tip || '', source: r.source || '' })
+const toRecipe = r => ({ id: r.id, household_id: state.household?.id, name: r.name, servings: r.servings, time: r.time, hue: r.hue, ingredients: r.ingredients, steps: r.steps, nutri: r.nutri || null, tip: r.tip || null, ...(r.source ? { source: r.source } : {}), updated_at: new Date().toISOString() })
 
 async function refresh() {
   if (state.mode !== 'cloud' || !state.household || !navigator.onLine) return
@@ -288,4 +292,26 @@ export function seedLocal() {
   state.items = [{ id: uid(), name: 'Café moulu', aisle: 'Épicerie', qty: '250 g' }, { id: uid(), name: 'Essuie-tout', aisle: 'Autres', qty: '' }]
   state.checks = {}
   commit()
+}
+
+/* ---------- Import depuis un site ---------- */
+export async function importUrl(url) {
+  if (!supabase) throw new Error("L'import par lien demande la synchronisation Supabase. Utilise « Coller le texte ».")
+  if (!navigator.onLine) throw new Error('Pas de connexion internet.')
+  let res
+  try { res = await supabase.functions.invoke('import-recipe', { body: { url } }) } catch (e) { throw new Error('Import impossible : ' + (e?.message || e)) }
+  const { data, error } = res
+  if (error) {
+    const st = error.context?.status
+    let msg = ''
+    try { msg = (await error.context?.json?.())?.error || '' } catch { }
+    if (msg) throw new Error(msg)
+    if (st === 404) throw new Error("La fonction d'import n'est pas encore installée dans Supabase (voir le guide).")
+    if (st === 401) throw new Error("Supabase a refusé l'accès à la fonction d'import. Désactive « Verify JWT » dans ses réglages (voir le guide), ou reconnecte-toi.")
+    if (/fetch|network|failed to send/i.test(error.message || '')) throw new Error("Impossible de joindre la fonction d'import. Vérifie ta connexion, ou qu'elle est bien installée dans Supabase.")
+    throw new Error('Import impossible : ' + error.message)
+  }
+  if (data?.error) throw new Error(data.error)
+  if (!data?.recipe) throw new Error('Aucune recette trouvée sur cette page.')
+  return data.recipe
 }

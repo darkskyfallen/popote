@@ -319,3 +319,18 @@ input.code{text-transform:uppercase;letter-spacing:.3em;font-family:var(--f-disp
 .meal .stepper button{width:28px;height:28px}
 .meal .stepper span{min-width:40px;font-size:12px}
 .slot{grid-template-columns:38px 1fr}
+
+/* Import */
+.btn.imp{display:inline-flex;align-items:center;gap:6px;background:var(--surface);box-shadow:var(--shadow-sm)}
+.btn.imp svg{width:18px;height:18px}
+@media (max-width:440px){.btn.imp span{display:none}.btn.imp{padding:11px 12px}}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--surface-2);border-radius:14px;padding:4px;margin:12px 0 16px}
+.segb{border:0;background:none;border-radius:11px;padding:9px 8px;font-weight:700;font-size:14px;color:var(--muted)}
+.segb[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-sm)}
+#iform-url .meta,#iform-text .meta{margin:0 0 6px}
+.impnote{margin:0 0 14px;background:var(--accent-soft);color:var(--ink);border-radius:12px;padding:10px 12px;font-size:14px}
+.srclink{display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:13px;font-weight:700;color:var(--accent);text-decoration:none}
+.srclink svg{width:14px;height:14px}
+.srclink:hover{text-decoration:underline}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:4px}
+@keyframes spin{to{transform:rotate(360deg)}}

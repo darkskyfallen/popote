@@ -62,6 +62,9 @@ create table if not exists public.user_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Lien vers la recette d'origine (import depuis un site)
+alter table public.recipes add column if not exists source text;
+
 create index if not exists recipes_household_idx on public.recipes (household_id);
 create index if not exists items_household_idx on public.shopping_items (household_id);
 

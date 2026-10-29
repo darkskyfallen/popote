@@ -3,6 +3,7 @@ import '@fontsource-variable/manrope'
 import './style.css'
 import { registerSW } from 'virtual:pwa-register'
 import * as Store from './store.js'
+import { toDraft, parseText, firstUrl } from './importer.js'
 import { AISLES, AISLE_HUE, UNITS, DAYS, SLOTS, HUES, PROFILES, CATS, FIBRE_MEAL } from './data.js'
 import {
   esc, norm, kf, initials, fmt, iso, weekDays, todayIso, mealKey, buildList,
@@ -12,7 +13,7 @@ import {
 const { state } = Store
 registerSW({ immediate: true })
 
-const UI = { tab: 'recettes', q: '', light: null, week: 0, sheet: null, addDay: 0, addSlot: 'soir', confirm: null, ingN: 0, install: null, busy: false, authMode: 'login', msg: '' }
+const UI = { imp: { mode: 'url', url: '', text: '', busy: false, err: '' }, share: null, tab: 'recettes', q: '', light: null, week: 0, sheet: null, addDay: 0, addSlot: 'soir', confirm: null, ingN: 0, install: null, busy: false, authMode: 'login', msg: '' }
 const $ = id => document.getElementById(id)
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
@@ -28,10 +29,14 @@ const ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   tick: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>',
   prev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
-  next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>'
+  next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  import: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  ext: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>'
 }
 
 /* ---------- Petits utilitaires ---------- */
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
+const srcLink = u => /^https?:\/\//i.test(u) ? `<a class="srclink" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${ICON.ext}${esc(host(u) || 'Recette d’origine')}</a>` : ''
 const byId = id => state.recipes.find(r => r.id === id)
 const days = () => weekDays(UI.week)
 const dayIsos = () => days().map(iso)
@@ -158,7 +163,8 @@ function vHousehold() {
 /* ---------- Recettes ---------- */
 function vRecettes() {
   const on = state.diet.on
-  return `<div class="toolbar"><label class="sfield">${ICON.search}<input class="search" id="q" type="search" placeholder="Chercher une recette ou un ingrédient" value="${esc(UI.q)}" aria-label="Chercher"></label>
+  return `<div class="toolbar"><label class="sfield">${ICON.search}<input class="search" id="q" type="search" placeholder="Rechercher" value="${esc(UI.q)}" aria-label="Chercher"></label>
+  <button class="btn imp" data-action="import" aria-label="Importer une recette">${ICON.import}<span>Importer</span></button>
   <button class="btn primary" data-action="new-recipe">+ Recette</button></div>
   ${on ? `<div class="choose" style="margin-bottom:12px">
       <button class="opt" data-action="flt" data-f="all" aria-pressed="${!UI.light}">Toutes</button>
@@ -175,7 +181,7 @@ function renderGrid() {
     .filter(r => !q || norm(r.name).includes(q) || r.ingredients.some(i => norm(i.name).includes(q)))
     .filter(r => { if (!on || !UI.light) return true; if (UI.light === 'fit') return (compat(r, D) ?? 0) >= 80; const l = level(r, D); return l === 'leger' || l === 'equi' })
     .sort((a, b) => on && UI.light === 'fit' ? (compat(b, D) ?? 0) - (compat(a, D) ?? 0) : 0)
-  if (!state.recipes.length) { g.innerHTML = `<p class="empty" style="grid-column:1/-1">Aucune recette pour l'instant. Ajoute la première avec « + Recette ».</p>`; return }
+  if (!state.recipes.length) { g.innerHTML = `<p class="empty" style="grid-column:1/-1">Aucune recette pour l'instant. Ajoute la première avec « + Recette », ou récupère-la sur un site avec « Importer ».</p>`; return }
   g.innerHTML = list.length ? list.map(r => {
     const m = r.nutri && macroPct(r.nutri), c = compat(r, D)
     return `<button class="card" data-action="open" data-id="${r.id}">
@@ -251,7 +257,7 @@ function renderSheet() {
   if (s.type === 'detail') {
     const r = byId(s.id); if (!r) return closeSheet()
     const f = s.srv / r.servings, ds = days()
-    b.innerHTML = `<div class="sheet-head">${thumb(r)}<div><h2>${esc(r.name)}</h2><div class="meta">${r.time} min · recette pour ${r.servings}</div></div></div>
+    b.innerHTML = `<div class="sheet-head">${thumb(r)}<div><h2>${esc(r.name)}</h2><div class="meta">${r.time} min · recette pour ${r.servings}</div>${r.source ? srcLink(r.source) : ''}</div></div>
     <div class="srv-row"><span><b>Portions</b><div class="meta">Les quantités s'adaptent</div></span>
       <span class="stepper"><button data-action="sdec" aria-label="Moins">−</button><span>${s.srv} pers.</span><button data-action="sinc" aria-label="Plus">+</button></span></div>
     ${D.on ? vNutrition(r) : ''}
@@ -274,7 +280,8 @@ function renderSheet() {
     <div class="actions"><button class="btn ghost block" data-action="close">Annuler</button></div>`
   }
   if (s.type === 'diet') b.innerHTML = vDietSheet()
-  if (s.type === 'form') { b.innerHTML = vForm(s.id ? byId(s.id) : null) }
+  if (s.type === 'form') { b.innerHTML = vForm(s.id ? byId(s.id) : s.draft || null) }
+  if (s.type === 'import') b.innerHTML = vImport()
   if (s.type === 'account') b.innerHTML = vAccount()
 }
 
@@ -328,10 +335,44 @@ function vDietSheet() {
 }
 const estText = e => `Dépense estimée : <b>${kf(e.tdee)} kcal/jour</b>. Objectif conseillé : <b>${kf(e.target)} kcal/jour</b>.`
 
+function vImport() {
+  const I = UI.imp, local = state.mode !== 'cloud'
+  const tabs = `<div class="seg" role="tablist"><button class="segb" role="tab" data-action="imode" data-m="url" aria-selected="${I.mode === 'url'}">Depuis un lien</button><button class="segb" role="tab" data-action="imode" data-m="text" aria-selected="${I.mode === 'text'}">Coller le texte</button></div>`
+  const body = I.mode === 'url'
+    ? `<form id="iform-url" novalidate>
+        <label>Lien de la recette<input id="i-url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.marmiton.org/recettes/…" value="${esc(I.url)}" ${local ? 'disabled' : ''}></label>
+        ${local ? '<p class="meta">L\'import par lien demande la synchronisation Supabase. En attendant, utilise « Coller le texte ».</p>'
+        : '<p class="meta">Marche avec la plupart des sites de cuisine : Marmiton, 750g, Cuisine AZ, Journal des Femmes, blogs…' + (isIOS() ? '' : ' Sur Android, tu peux aussi utiliser Partager → Popote depuis Chrome.') + '</p>'}
+        <p class="err" id="i-err">${esc(I.err)}</p>
+        <button class="btn primary block" type="submit" ${I.busy || local ? 'disabled' : ''}>${I.busy ? '<span class="spin" aria-hidden="true"></span> Lecture de la page…' : 'Importer'}</button></form>`
+    : `<form id="iform-text" novalidate>
+        <label>Texte de la recette<textarea id="i-text" rows="9" placeholder="Colle ici le titre, la liste des ingrédients et les étapes, copiés depuis n'importe quel site ou message.">${esc(I.text)}</textarea></label>
+        <p class="meta">Les rubriques « Ingrédients » et « Préparation » aident à bien séparer les deux. Tu pourras tout corriger à l'étape suivante.</p>
+        <p class="err" id="i-err">${esc(I.err)}</p>
+        <button class="btn primary block" type="submit">Analyser le texte</button></form>`
+  return `<h2 class="stitle">Importer une recette</h2>${tabs}${body}
+    <div class="actions"><button class="btn ghost block" data-action="close">Annuler</button></div>`
+}
+function openDraft(raw) {
+  const d = toDraft(raw, state.recipes.length)
+  if (!d || (!d.ingredients.length && !d.steps.length)) throw new Error("Je n'ai trouvé ni ingrédients ni étapes. Vérifie le contenu, ou ajoute les rubriques « Ingrédients » et « Préparation ».")
+  UI.imp = { mode: UI.imp.mode, url: '', text: '', busy: false, err: '' }
+  openSheet({ type: 'form', draft: d })
+  d.ingredients.forEach(addRow); addRow()
+  $('sheet-body').closest('.sheet').scrollTop = 0
+}
+async function runImport(url) {
+  UI.imp.url = url; UI.imp.busy = true; UI.imp.err = ''; renderSheet()
+  try { openDraft(await Store.importUrl(url)) }
+  catch (e) { UI.imp.busy = false; UI.imp.err = e.message || String(e); if (UI.sheet?.type === 'import') renderSheet() }
+}
+
 function vForm(r) {
   UI.ingN = 0
   const n = r?.nutri || {}
-  return `<form id="rform" novalidate><h2 class="stitle">${r ? 'Modifier la recette' : 'Nouvelle recette'}</h2>
+  const drafted = r && !r.id
+  return `<form id="rform" novalidate><h2 class="stitle">${r?.id ? 'Modifier la recette' : drafted ? 'Recette importée' : 'Nouvelle recette'}</h2>
+    ${drafted ? `<p class="impnote">Vérifie les quantités, les unités et les rayons, puis enregistre.${r.source ? ' Source : ' + esc(host(r.source)) + '.' : ''}</p>` : ''}
     <label>Nom<input id="f-name" placeholder="ex. Gratin dauphinois" value="${esc(r?.name || '')}"></label>
     <div class="row2"><label>Portions<input id="f-serv" type="number" min="1" value="${r?.servings || 4}" inputmode="numeric"></label><label>Temps (min)<input id="f-time" type="number" min="0" value="${r?.time ?? 30}" inputmode="numeric"></label></div>
     <fieldset><legend>Ingrédients</legend><div id="ing-rows"></div><button type="button" class="btn sm" data-action="addrow">+ Ingrédient</button></fieldset>
@@ -416,6 +457,8 @@ document.addEventListener('click', async e => {
     case 'flt': UI.light = ds.f === 'all' ? null : ds.f; render(); break
     case 'new-recipe': openSheet({ type: 'form' }); addRow(); addRow(); addRow(); setTimeout(() => $('f-name')?.focus(), 60); break
     case 'edit-recipe': { const r = byId(UI.sheet.id); openSheet({ type: 'form', id: r.id }); r.ingredients.forEach(addRow); addRow(); break }
+    case 'import': UI.imp.err = ''; if (state.mode !== 'cloud') UI.imp.mode = 'text'; openSheet({ type: 'import' }); setTimeout(() => $(UI.imp.mode === 'url' ? 'i-url' : 'i-text')?.focus(), 60); break
+    case 'imode': UI.imp.mode = ds.m; UI.imp.err = ''; renderSheet(); break
     case 'addrow': addRow(); break
     case 'delrow': t.closest('.ing-row').remove(); break
     case 'delrecipe':
@@ -459,6 +502,8 @@ document.addEventListener('change', e => {
 
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { UI.q = e.target.value; renderGrid() }
+  if (e.target.id === 'i-url') UI.imp.url = e.target.value
+  if (e.target.id === 'i-text') UI.imp.text = e.target.value
   if (/^d-(age|taille|poids|act)$/.test(e.target.id)) {
     readProf(); const est = estimate(state.diet.prof)
     $('d-est').innerHTML = estText(est); $('d-use').textContent = 'Utiliser ' + kf(est.target) + ' kcal comme objectif'
@@ -505,6 +550,16 @@ document.addEventListener('submit', async e => {
     Store.saveDiet({ ...state.diet, on: true }); closeSheet(); render()
     toast(typed && typed < floor ? 'Objectif relevé au minimum de ' + kf(floor) + ' kcal' : 'Objectif enregistré : ' + kf(state.diet.target) + ' kcal/jour')
   }
+  if (id === 'iform-url') {
+    const url = firstUrl($('i-url').value)
+    if (!url) { $('i-err').textContent = 'Colle un lien qui commence par https://'; return }
+    if (!UI.imp.busy) await runImport(url)
+  }
+  if (id === 'iform-text') {
+    const txt = $('i-text').value.trim()
+    if (!txt) { $('i-err').textContent = 'Colle d\'abord le texte de la recette.'; return }
+    try { openDraft({ ...parseText(txt), source: firstUrl(txt) }) } catch (err) { UI.imp.err = err.message; $('i-err').textContent = err.message }
+  }
   if (id === 'rform') {
     const err = $('f-err'), name = $('f-name').value.trim()
     const ings = [...document.querySelectorAll('.ing-row')].map(r => ({
@@ -519,16 +574,34 @@ document.addEventListener('submit', async e => {
       id: old?.id, name, servings: Math.max(1, parseInt($('f-serv').value) || 4), time: Math.max(0, parseInt($('f-time').value) || 0),
       hue: old?.hue ?? HUES[state.recipes.length % HUES.length], ingredients: ings,
       steps: $('f-steps').value.split('\n').map(s => s.trim()).filter(Boolean),
-      nutri: kc ? { kcal: kc, p: nv('f-p'), g: nv('f-g'), l: nv('f-l'), f: nv('f-f') } : null, tip: $('f-tip').value.trim()
+      nutri: kc ? { kcal: kc, p: nv('f-p'), g: nv('f-g'), l: nv('f-l'), f: nv('f-f') } : null, tip: $('f-tip').value.trim(),
+      source: old?.source || UI.sheet.draft?.source || ''
     }
     const saved = Store.saveRecipe(r)
-    render(); openSheet({ type: 'detail', id: saved.id, srv: saved.servings }); toast(old ? 'Recette mise à jour' : 'Recette enregistrée')
+    render(); openSheet({ type: 'detail', id: saved.id, srv: saved.servings }); toast(old ? 'Recette mise à jour' : UI.sheet?.draft ? 'Recette importée' : 'Recette enregistrée')
   }
 })
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && UI.sheet) { closeSheet(); render() } })
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); UI.install = e; if (UI.sheet?.type === 'account') renderSheet() })
 
-Store.subscribe(render)
+// Partage Android (« Partager → Popote ») : le lien arrive dans l'adresse de la page
+{
+  const q = new URLSearchParams(location.search)
+  if (q.has('url') || q.has('text') || q.has('title')) {
+    const raw = [q.get('url'), q.get('text'), q.get('title')].filter(Boolean).join('\n')
+    UI.share = { url: firstUrl(raw), text: raw }
+    history.replaceState(null, '', location.pathname)
+  }
+}
+function handleShare() {
+  if (!UI.share || state.phase !== 'ready') return
+  const sh = UI.share; UI.share = null
+  UI.tab = 'recettes'; render()
+  if (sh.url && state.mode === 'cloud') { UI.imp.mode = 'url'; openSheet({ type: 'import' }); runImport(sh.url) }
+  else { UI.imp.mode = 'text'; UI.imp.text = sh.text; UI.imp.err = ''; openSheet({ type: 'import' }) }
+}
+
+Store.subscribe(() => { render(); handleShare() })
 render()
 Store.init()

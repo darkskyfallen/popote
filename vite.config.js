@@ -20,6 +20,12 @@ export default defineConfig({
         background_color: '#F1F4F1',
         theme_color: '#117A4D',
         categories: ['food', 'lifestyle'],
+        // Popote apparaît dans le menu « Partager » d'Android une fois installée
+        share_target: {
+          action: './',
+          method: 'GET',
+          params: { title: 'title', text: 'text', url: 'url' }
+        },
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
